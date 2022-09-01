@@ -14,16 +14,115 @@ $tagMap = @{
     'sl' = 'Primary-SL'
 }
 
-# Get Local IP Addresses
+function Write-Log {
+    param (
+        [Parameter(Mandatory = $true, ValueFromPipeline)][string]$out
+    )
+
+    # Color code the output based on the first word in the message
+    $color = switch (($out).split()[0]) {
+        INFO {
+            'Gray'
+        }
+        WARN {
+            'Yellow'
+        }
+        ERROR {
+            'Red'
+        }
+        SUCCESS {
+            'Green'
+        }
+        default {
+            'White'
+        }
+    }
+    
+    Write-Host "$(((Get-PSCallStack)[-2]).Location): $out" -ForegroundColor $color
+
+}
+
+function Invoke-RestAPI {
+    param (
+        $uri,
+        $method,
+        $headers,
+        $body
+    )
+
+    # Check 1: HTTPS Connectivity
+    try {
+        # WARNING: Writing the URI of an API call to a log may leak (and archive) sensitive information
+        # "DEBUG Invoking REST Method: $method $uri" | Write-Log
+        $result = Invoke-RestMethod -Uri $uri -Method $method -Headers $headers -Body $body
+    }
+    catch {
+        $ErrorMessage = $_.Exception.Message
+        "ERROR Request Failed: $ErrorMessage" | Write-Log
+        exit
+    }
+    
+    # Check 2: Successful API Request
+    if ($result.'@status' -eq "success") {
+        return $result
+    }
+    else {
+        "ERROR Status: $($result.'@status'): Terminating Script" | Write-Log
+        exit
+    }
+
+}
+
+function Invoke-XmlAPI {
+    param (
+        $uri,
+        $method,
+        $headers,
+        $body
+    )
+
+    # Check 1: HTTPS Connectivity
+    try {
+        # WARNING: Writing the URI of an API call to a log may leak (and archive) sensitive information
+        # "DEBUG Invoking XML Request: $method $uri" | Write-Log
+        $result = Invoke-WebRequest -Uri $uri -Method $method -Headers $headers -Body $body
+    }
+    catch {
+        $ErrorMessage = $_.Exception.Message
+        "ERROR Request Failed: $ErrorMessage" | Write-Log
+        break
+    }
+    
+    # Check 2: Successful API Request
+    if ($result.StatusCode -eq 200) {
+        return $result
+    }
+    else {
+        "ERROR Status: $($result.StatusCode): Terminating Script" | Write-Log
+        break
+    }
+
+}
+
+"Starting Script" | Write-Log
+
+# Get Local Windows IP Addresses
 $notAlias = '^(Bluetooth Network Connection|vEthernet|Loopback Pseudo-Interface)'
 $myIps = (Get-NetIPAddress | Where-Object { $_.InterfaceAlias -notmatch $notAlias -and $_.AddressFamily -eq "IPv4" -and $_.AddressState -eq 'Preferred' } ).IPAddress
 
-# Get Address Objects with matching IP via API
+# Get PAN-OS Address Objects with matching IP via API
 $uri = "https://$hostName/restapi/v10.0/Objects/Addresses?location=vsys&vsys=vsys1"
-$response = Invoke-RestMethod -Uri $uri -Headers $header -Method Get
+$response = Invoke-RestAPI -Uri $uri -Headers $header -method GET
 $panObjects = $response.result.entry | Where-Object { $myIps -contains $_.'ip-netmask' }
 
+if ($null -eq $panObjects) {
+
+    "ERROR No Address Objects could be found in PAN-OS with the following $myIps. Script terminated with errors." | Write-Log
+    exit
+}
+
 foreach ($panObject in $panObjects) {
+
     # Get list of tag members, excluding ones scoped in $tagMap
     $newTagMembers = $panObject.tag.member | Where-Object { $tagMap.values -notcontains $_ }
     
@@ -39,42 +138,50 @@ foreach ($panObject in $panObjects) {
     }
     $body = $entry | ConvertTo-Json -Depth 10
     
-    Write-Host "Updating `'$($panNewObject.'@name')`' with tag `'$($tagMap[$isp])`'"
+    "INFO Updating `'$($panNewObject.'@name')`' with tag `'$($tagMap[$isp])`'" | Write-Log
 
     # Update the existing record
     $uri = [uri]::EscapeUriString("https://$hostName/restapi/v10.0/Objects/Addresses?location=vsys&vsys=vsys1&name=$($panNewObject.'@name')")
-    $response = Invoke-RestMethod -Uri $uri -Headers $header -Method Put -Body $body
+    $response = Invoke-RestAPI -Uri $uri -Headers $header -Method PUT -Body $body
 }
 
-# Commit the change in PAN-OS (yes, this is a swtich to the XML API because PAN)
+# Commit the change in PAN-OS (yes, this is a swtich to the XML API... because PAN)
 $uri = [uri]::EscapeUriString("https://$hostName/api/?type=commit&cmd=<commit></commit>")
-$response = Invoke-RestMethod -Uri $uri -Headers $header -Method Get
-Write-Output $response.InnerXml
-
-# Get the JobId out of the response
-$msgLine = $response.InnerXml | Select-Xml -XPath "//msg//line" | ForEach-Object { $_.node.InnerXml }
-$jobId = ($msgLine -split 'Commit job enqueued with jobid ')[1]
+$response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
 
 # Check the status of the Job in a while loop to provide feedback
-if ($response.InnerXml -like "*success*") {
-    Write-Host "Checking on JobID $jobId for 10-min or until complete."
+if ($response.Content -like "*success*") {
+    
+    # Get the JobId out of the response
+    $msgLine = $response.Content | Select-Xml -XPath "//msg//line" | ForEach-Object { $_.node.InnerXml }
+    $jobId = ($msgLine -split 'Commit job enqueued with jobid ')[1]
+
+    "INFO Commit Success: Checking on JobID $jobId for 10-min or until complete." | Write-Log
+
     $test = 0
-    while ($test -ne 60) {
-        Start-Sleep -Seconds 10
+    while ($test -ne 30) {
+        Start-Sleep -Seconds 20
         $test++
             
         $uri = [uri]::EscapeUriString("https://$hostName/api/?type=op&cmd=<show><jobs><id>$jobId</id></jobs></show>")
-        $response = Invoke-RestMethod -Uri $uri -Headers $header -Method Get
+        $response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
 
-        $result = $response.InnerXml | Select-Xml -XPath "//result//result" | ForEach-Object { $_.node.InnerXml }
-        $tfin = $response.InnerXml | Select-Xml -XPath "//result//tfin" | ForEach-Object { $_.node.InnerXml }
-        $progress = $response.InnerXml | Select-Xml -XPath "//result//progress" | ForEach-Object { $_.node.InnerXml }
+        $result = $response.Content | Select-Xml -XPath "//result//result" | ForEach-Object { $_.node.InnerXml }
+        $progress = $response.Content | Select-Xml -XPath "//result//progress" | ForEach-Object { $_.node.InnerXml }
             
-        Write-Output "Currently $result - $tfin - $progress% as of $(Get-Date -Format 'yyyy/MM/dd HH:mm:ss')"
+        "INFO JobID $jobId Result $result $progress%." | Write-Log
 
         if ($result -eq 'OK') {
-            break
+            "SUCCESS Script completed successfully." | Write-Log
+            exit
         }
     }
-}
 
+    "WARN Timed out on JobID $jobId.  Script completed with warnings." | Write-Log
+    exit
+}
+else {
+
+    "ERROR Failed to commit job.  Script terminated with errors." | Write-Log
+    exit
+}
