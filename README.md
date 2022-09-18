@@ -35,7 +35,7 @@ REST API
 - Update the following static script inputs for your PAN-OS device management IP and however you are storing the API key.
     - NOTE: This script will FAIL unless you have setup TLS properly.
 
-```
+```powershell
 $hostName = 'fw1.tg.1korn.io'
 $apiKey = Import-Clixml './apikey.clixml'
 ```
@@ -44,7 +44,7 @@ $apiKey = Import-Clixml './apikey.clixml'
     - Provides an easy way to use the script without having to know your Tag names.
     - Create mutually exclusive tags for a single object.  All of these tags are stripped from an object before the correct tag is added.
 
-```
+```powershell
 $tagMap = @{
     'cl' = 'Primary-CL'
     'sl' = 'Primary-SL'
