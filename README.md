@@ -1,4 +1,6 @@
 # Update-PanTag
+![GitHub](https://img.shields.io/github/license/singlekorn/Update-PanTag)
+
 This was created because I use a policy based forwarding policy which uses tags to select a primary ISP for some source IP addresses on my network.  I regularly need to change my primary ISP for development purposes without using L2 methods (switching SSID/VLAN).
 
 - Get the active IP Addresses of the Windows Device this script is run on (Tested only with PS 7.2.6).
@@ -13,13 +15,16 @@ This was created because I use a policy based forwarding policy which uses tags 
 ## PAN-OS AuthN & AuthZ
 
 - Create a dedicated **Admin Role** with ONLY the following permissions (you need to manually deny everything else):
+
 ```
 XML API
     Operational Requests (needed to check status of submitted jobs)
     Commit
+    
 REST API
     Addresses
 ```
+
 - Use a dedicated **Administrator** account for this script:
     - Password (only used one-time to generate your API key)
     - Administrator Type: Role Based
@@ -45,3 +50,12 @@ $tagMap = @{
     'sl' = 'Primary-SL'
 }
 ```
+
+## Documentation
+- Documentation format is **Markdown**: [Markdown Guide](https://www.markdownguide.org/)
+- Markdown IDE: **Obsidian** [Obsidian](https://obsidian.md/)
+
+###  Authors
+Christopher Einkorn
+- ![Twitter Follow](https://img.shields.io/twitter/follow/singlekorn?style=social)
+- ![GitHub followers](https://img.shields.io/github/followers/singlekorn?label=singlekorn&style=social)
