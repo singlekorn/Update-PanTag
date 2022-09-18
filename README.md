@@ -1,5 +1,5 @@
 # Update-PanTag
-[![License MIT](https://img.shields.io/github/license/singlekorn/Update-PanTag)]
+![License MIT](https://img.shields.io/github/license/singlekorn/Update-PanTag)
 
 This was created because I use a policy based forwarding policy which uses tags to select a primary ISP for some source IP addresses on my network.  I regularly need to change my primary ISP for development purposes without using L2 methods (switching SSID/VLAN).
 
