@@ -52,8 +52,8 @@ $tagMap = @{
 ```
 
 ## Documentation
-- Documentation format is **Markdown**: [Markdown Guide](https://www.markdownguide.org/)
-- Markdown IDE: **Obsidian** [Obsidian](https://obsidian.md/)
+- Documentation format is: [Markdown](https://www.markdownguide.org/)
+- Markdown IDE: [Obsidian](https://obsidian.md/)
 
 ###  Authors
 Christopher Einkorn
