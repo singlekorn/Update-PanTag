@@ -57,5 +57,5 @@ $tagMap = @{
 
 ###  Authors
 Christopher Einkorn
-- ![Twitter Follow](https://img.shields.io/twitter/follow/singlekorn?style=social)
-- ![GitHub followers](https://img.shields.io/github/followers/singlekorn?label=singlekorn&style=social)
+- [![Follow on Twitter](https://img.shields.io/twitter/follow/singlekorn?style=social)](https://twitter.com/singlekorn)
+- [![Follow on GitHub](https://img.shields.io/github/followers/singlekorn?label=singlekorn&style=social)](https://github.com/singlekorn)
