@@ -121,67 +121,85 @@ if ($null -eq $panObjects) {
     exit
 }
 
+$isUpdated = $false
 foreach ($panObject in $panObjects) {
 
-    # Get list of tag members, excluding ones scoped in $tagMap
-    $newTagMembers = $panObject.tag.member | Where-Object { $tagMap.values -notcontains $_ }
-    
-    # Add the new desired tag to the existing tags
-    $newTagMembers += $tagMap[$isp]
-    
-    # Create a new object from the response, removing fields not needed in the Edit request, and using the new list of tag members
-    $panNewObject = $panObject | Select-Object -ExcludeProperty '@location', '@vsys'
-    $panNewObject.tag.member = $newTagMembers
-    
-    $entry = [PSCustomObject]@{
-        entry = $panNewObject 
-    }
-    $body = $entry | ConvertTo-Json -Depth 10
-    
-    "INFO Updating `'$($panNewObject.'@name')`' with tag `'$($tagMap[$isp])`'" | Write-Log
+    # First check if each object already has the requested tag, else update the tag
+    if ($panObject.tag.member -contains $tagMap[$isp]) {
 
-    # Update the existing record
-    $uri = [uri]::EscapeUriString("https://$hostName/restapi/v10.0/Objects/Addresses?location=vsys&vsys=vsys1&name=$($panNewObject.'@name')")
-    $response = Invoke-RestAPI -Uri $uri -Headers $header -Method PUT -Body $body
+        "INFO `'$($panObject.'@name')`' already has tag `'$($tagMap[$isp])`'" | Write-Log
+        
+    } else {
+
+        # Get list of tag members, excluding ones scoped in $tagMap
+        $newTagMembers = $panObject.tag.member | Where-Object { $tagMap.values -notcontains $_ }
+        
+        # Add the new desired tag to the existing tags
+        $newTagMembers += $tagMap[$isp]
+        
+        # Create a new object from the response, removing fields not needed in the Edit request, and using the new list of tag members
+        $panNewObject = $panObject | Select-Object -ExcludeProperty '@location', '@vsys'
+        $panNewObject.tag.member = $newTagMembers
+        
+        $entry = [PSCustomObject]@{
+            entry = $panNewObject 
+        }
+        $body = $entry | ConvertTo-Json -Depth 10
+        
+        "INFO Updating `'$($panNewObject.'@name')`' with tag `'$($tagMap[$isp])`'" | Write-Log
+    
+        # Update the existing record
+        $uri = [uri]::EscapeUriString("https://$hostName/restapi/v10.0/Objects/Addresses?location=vsys&vsys=vsys1&name=$($panNewObject.'@name')")
+        $response = Invoke-RestAPI -Uri $uri -Headers $header -Method PUT -Body $body
+        $isUpdated = $true
+    }
+
 }
 
-# Commit the change in PAN-OS (yes, this is a swtich to the XML API... because PAN)
-$uri = [uri]::EscapeUriString("https://$hostName/api/?type=commit&cmd=<commit></commit>")
-$response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
+# We only need to commit if we made a change
+if ($isUpdated) {
 
-# Check the status of the Job in a while loop to provide feedback
-if ($response.Content -like "*success*") {
+    # Commit the change in PAN-OS (yes, this is a swtich to the XML API... because PAN)
+    $uri = [uri]::EscapeUriString("https://$hostName/api/?type=commit&cmd=<commit></commit>")
+    $response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
     
-    # Get the JobId out of the response
-    $msgLine = $response.Content | Select-Xml -XPath "//msg//line" | ForEach-Object { $_.node.InnerXml }
-    $jobId = ($msgLine -split 'Commit job enqueued with jobid ')[1]
-
-    "INFO Commit Success: Checking on JobID $jobId for 10-min or until complete." | Write-Log
-
-    $test = 0
-    while ($test -ne 30) {
-        Start-Sleep -Seconds 20
-        $test++
-            
-        $uri = [uri]::EscapeUriString("https://$hostName/api/?type=op&cmd=<show><jobs><id>$jobId</id></jobs></show>")
-        $response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
-
-        $result = $response.Content | Select-Xml -XPath "//result//result" | ForEach-Object { $_.node.InnerXml }
-        $progress = $response.Content | Select-Xml -XPath "//result//progress" | ForEach-Object { $_.node.InnerXml }
-            
-        "INFO JobID $jobId Result $result $progress%." | Write-Log
-
-        if ($result -eq 'OK') {
-            "SUCCESS Script completed successfully." | Write-Log
-            exit
+    # Check the status of the Job in a while loop to provide feedback
+    if ($response.Content -like "*success*") {
+        
+        # Get the JobId out of the response
+        $msgLine = $response.Content | Select-Xml -XPath "//msg//line" | ForEach-Object { $_.node.InnerXml }
+        $jobId = ($msgLine -split 'Commit job enqueued with jobid ')[1]
+    
+        "INFO Commit Success: Checking on JobID $jobId for 10-min or until complete." | Write-Log
+    
+        $test = 0
+        while ($test -ne 30) {
+            Start-Sleep -Seconds 20
+            $test++
+                
+            $uri = [uri]::EscapeUriString("https://$hostName/api/?type=op&cmd=<show><jobs><id>$jobId</id></jobs></show>")
+            $response = Invoke-XmlAPI -Uri $uri -Headers $header -Method GET
+    
+            $result = $response.Content | Select-Xml -XPath "//result//result" | ForEach-Object { $_.node.InnerXml }
+            $progress = $response.Content | Select-Xml -XPath "//result//progress" | ForEach-Object { $_.node.InnerXml }
+                
+            "INFO JobID $jobId Result $result $progress%." | Write-Log
+    
+            if ($result -eq 'OK') {
+                "SUCCESS Script completed successfully." | Write-Log
+                exit
+            }
         }
+    
+        "WARN Timed out on JobID $jobId.  Script completed with warnings." | Write-Log
+        exit
     }
-
-    "WARN Timed out on JobID $jobId.  Script completed with warnings." | Write-Log
-    exit
+    else {
+    
+        "ERROR Failed to commit job.  Script terminated with errors." | Write-Log
+        exit
+    }
 }
 else {
-
-    "ERROR Failed to commit job.  Script terminated with errors." | Write-Log
-    exit
+    "SUCCESS No changes necessary!" | Write-Log
 }
