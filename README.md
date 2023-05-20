@@ -5,8 +5,9 @@ This was created because I use a policy based forwarding policy which uses tags 
 
 - Get the active IP Addresses of the Windows Device this script is run on (Tested only with PS 7.2.6).
 - Find the matching Address Objects in PAN-OS.
+- Check if the object is already tagged for the requested ISP.
 - Strip the ISP routing tags off these objects and add the one decided by this script.
-- Commit the configuration.
+- Commit the configuration, if necessary.
 - Watch the commit job until it is complete.
 
 ## Usage Example
